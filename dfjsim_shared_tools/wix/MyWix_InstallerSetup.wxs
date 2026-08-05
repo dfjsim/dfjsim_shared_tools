@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
+     xmlns:ui="http://wixtoolset.org/schemas/v4/wxs/ui"
+     xmlns:util="http://wixtoolset.org/schemas/v4/wxs/util">
+
+  <Package Id="$(var.AppId)"
+           Name="$(var.AppName)"
+           Manufacturer="$(var.Manufacturer)"
+           Version="$(var.AppVersion)"
+           UpgradeCode="$(var.UpgradeCode)"
+           Scope="perUser">
+
+    <MediaTemplate EmbedCab="yes" />
+    <MajorUpgrade DowngradeErrorMessage="A newer version is already installed."
+                  AllowSameVersionUpgrades="yes"
+                  AllowDowngrades="$(var.AllowDowngrades)"
+                  Schedule="afterInstallInitialize" />
+
+    <StandardDirectory Id="LocalAppDataFolder">
+      <Directory Id="INSTALLFOLDER" Name="Programs">
+        <Directory Id="AppDir" Name="$(var.AppId)" />
+      </Directory>
+    </StandardDirectory>
+
+    <StandardDirectory Id="ProgramMenuFolder">
+      <Directory Id="AppProgramMenuDir" Name="$(var.AppName)" />
+    </StandardDirectory>
+
+    <ComponentGroup Id="AppFilesGroup" Directory="AppDir">
+      <Files Include="$(var.IncludeSourceDir)\**" />
+    </ComponentGroup>
+
+    <ComponentGroup Id="ShortcutsGroup" Directory="AppProgramMenuDir">
+      <Component Id="AppShortcut" Guid="*">
+        <Shortcut Id="StartMenuShortcut"
+                  Name="$(var.AppName)"
+                  Target="[AppDir]$(var.AppName).exe"
+                  WorkingDirectory="AppDir" />
+        <RemoveFolder Id="RemoveAppMenuDir" On="uninstall" Directory="AppProgramMenuDir" />
+        <RegistryValue Root="HKCU" Key="Software\$(var.AppName)" Name="installed" Type="integer" Value="1" KeyPath="yes"/>
+      </Component>
+    </ComponentGroup>
+
+    <Feature Id="ProductFeature" Title="$(var.AppId)" Level="1">
+      <ComponentGroupRef Id="AppFilesGroup" />
+      <ComponentGroupRef Id="ShortcutsGroup" />
+    </Feature>
+
+    <ui:WixUI Id="MyWixUI_InstallDir" InstallDirectory="INSTALLFOLDER" />
+
+    <Property Id="WIXUI_EXITDIALOGOPTIONALCHECKBOXTEXT" Value="Launch $(var.AppName)" />
+    <Property Id="WIXUI_EXITDIALOGOPTIONALCHECKBOX" Value="1" />
+
+    <CustomAction Id="LaunchApplication"
+                  Directory="AppDir"
+                  ExeCommand="[AppDir]$(var.AppName).exe"
+                  Execute="immediate"
+                  Return="asyncNoWait" />
+
+  </Package>
+</Wix>

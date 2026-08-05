@@ -1,0 +1,41 @@
+[build-system]
+    requires      = ["setuptools>=61"]
+    build-backend = "setuptools.build_meta"
+
+[project]
+    name = "dfjsim_shared_tools"
+    version = "0.1.1"
+    description = "Shared build and runtime helpers for dfjsim Python desktop applications."
+    readme = "README.md"
+    license = "GPL-3.0-or-later"
+    requires-python = ">=3.13,<3.14"
+    dependencies = [
+        "packaging",
+        "pydantic",
+        "pyside6",
+    ]
+
+    [project.scripts]
+        dfjsim-build = "dfjsim_shared_tools.build_nuitka_wix_installer:main"
+
+[tool.uv]
+    package = true
+
+[dependency-groups]
+    dev = [
+        "pytest",
+    ]
+
+[tool.setuptools.packages.find]
+    where   = ["."]
+    include = ["dfjsim_shared_tools*"]
+
+[tool.setuptools.package-data]
+    dfjsim_shared_tools = ["wix/*.wxs"]
+
+[tool.pytest.ini_options]
+    testpaths = ["tests"]
+
+[tool.ruff]
+    target-version = "py313"
+    line-length    = 120
