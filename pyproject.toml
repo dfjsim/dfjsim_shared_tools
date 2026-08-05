@@ -4,7 +4,7 @@
 
 [project]
     name = "dfjsim_shared_tools"
-    version = "0.2.0"
+    version = "0.2.1"
     description = "Shared build and runtime helpers for dfjsim Python desktop applications."
     readme = "README.md"
     license = "GPL-3.0-or-later"
@@ -49,5 +49,5 @@
     testpaths = ["tests"]
 
 [tool.ruff]
-    target-version = "py313"
+    target-version = "py314"
     line-length    = 120

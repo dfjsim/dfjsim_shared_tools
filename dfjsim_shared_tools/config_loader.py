@@ -10,6 +10,8 @@ from typing import Any, TypeVar
 
 from pydantic import BaseModel
 
+logger = logging.getLogger(__name__)
+
 T = TypeVar("T", bound=BaseModel)
 
 CONFIG_DEFAULT_FILENAME = Path("config_default.toml")
@@ -56,19 +58,19 @@ class ConfigLoader:
         try:
             with filename.open("rb") as handle:
                 config = tomllib.load(handle)
-            logging.info("Loading config: %s", filename)
+            logger.info("Loading config: %s", filename)
             return config
         except FileNotFoundError:
             if required:
-                logging.error("Required config file not found: %s", filename)
+                logger.error("Required config file not found: %s", filename)
                 raise
-            logging.debug("Config file %s not found; using empty config.", filename)
+            logger.debug("Config file %s not found; using empty config.", filename)
             return {}
         except Exception as exc:
             if required:
-                logging.error("Error loading %s: %s", filename, exc)
+                logger.error("Error loading %s: %s", filename, exc)
                 raise
-            logging.warning("Error loading %s: %s", filename, exc)
+            logger.warning("Error loading %s: %s", filename, exc)
             return {}
 
     def _deep_merge(self, dict1: dict, dict2: dict) -> dict:
@@ -106,7 +108,7 @@ class ConfigLoader:
         include_general: bool = True,
     ) -> dict[str, Any]:
         if not folder.exists():
-            logging.debug("Config folder not found: %s", folder)
+            logger.debug("Config folder not found: %s", folder)
             return {}
 
         merged_config: dict[str, Any] = {}
@@ -121,7 +123,10 @@ class ConfigLoader:
                 continue
             if allowed_subfolders is not None and subfolder.name not in allowed_subfolders:
                 continue
-            for toml_file in sorted(subfolder.glob("*.toml")):
+            # Recurse so a config section can be split across nested category folders
+            # (e.g. pa_artifact_matching/<group>/<category>/*.toml). Files are merged in
+            # sorted full-path order for deterministic results regardless of nesting depth.
+            for toml_file in sorted(subfolder.rglob("*.toml")):
                 sub_config = self._read_toml_file(toml_file)
                 merged_config = self._deep_merge(merged_config, sub_config)
 
@@ -220,7 +225,7 @@ class ConfigLoader:
                 handler.setLevel(logging_level)
 
         self._logging_configured = True
-        logging.debug(
+        logger.debug(
             "Logging configured with level: %s (from config level: %s)",
             logging.getLevelName(logging_level),
             user_logging_level,

@@ -10,6 +10,8 @@ from typing import Any
 
 from packaging import version
 
+logger = logging.getLogger(__name__)
+
 UPDATE_AVAILABLE_MSG = (
     "An updated version of the installer is available. Would you like to update now?"
     "\n\nThis will launch the installer and exit the application."
@@ -63,8 +65,8 @@ def _show_update_popup(window: Any | None = None) -> bool:
             temp_root.destroy()
 
         return answer
-    except Exception as exc:
-        logging.error("Error displaying update popup: %s", exc)
+    except Exception as exc:  # noqa: BLE001 - a broken GUI toolkit must not block the update
+        logger.error("Error displaying update popup: %s", exc)
         return True
 
 
@@ -85,7 +87,7 @@ def _parse_installer_version(version_text: str) -> version.Version | None:
     try:
         return version.parse(version_text)
     except version.InvalidVersion:
-        logging.warning("Ignoring installer with unparseable version %r.", version_text)
+        logger.warning("Ignoring installer with unparseable version %r.", version_text)
         return None
 
 
@@ -104,27 +106,27 @@ def _check_for_updated_installer(script_name: str, installer_dir: Path, current_
     ]
 
     if not candidates:
-        logging.info("No MSI or EXE installers found in the directory.")
+        logger.info("No MSI or EXE installers found in the directory.")
         return None
 
     latest_ver, latest_installer = max(candidates, key=lambda item: item[0])
     if latest_ver > current_ver:
-        logging.info("Found updated installer: %s", latest_installer)
+        logger.info("Found updated installer: %s", latest_installer)
         return latest_installer
 
-    logging.info("No updated MSI or EXE installer found.")
+    logger.info("No updated MSI or EXE installer found.")
     return None
 
 
 def _run_installer(installer_path: Path) -> None:
     try:
-        logging.warning("Launching updated installer: %s", installer_path)
+        logger.warning("Launching updated installer: %s", installer_path)
         if installer_path.suffix.lower() == ".msi":
             subprocess.Popen(["msiexec", "/i", str(installer_path)])
         else:
             subprocess.Popen([str(installer_path)])
-    except Exception as exc:
-        logging.error("Error launching installer: %s", exc)
+    except Exception as exc:  # noqa: BLE001 - any launch failure must exit non-zero, not propagate
+        logger.error("Error launching installer: %s", exc)
         sys.exit(1)
     else:
         sys.exit(0)
@@ -139,7 +141,7 @@ def auto_update(script_name: str, installer_dir: Path | None, current_version: s
         return
 
     if window is not None and not _show_update_popup(window):
-        logging.info("Skipping available update (%s) and running current version.", new_installer)
+        logger.info("Skipping available update (%s) and running current version.", new_installer)
         return
 
     _run_installer(new_installer)

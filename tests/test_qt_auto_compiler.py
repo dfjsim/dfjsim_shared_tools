@@ -1,5 +1,5 @@
-from pathlib import Path
 import subprocess
+from pathlib import Path
 
 from dfjsim_shared_tools.qt_auto_compiler import compile_ui_if_needed
 

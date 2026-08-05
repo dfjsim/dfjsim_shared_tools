@@ -100,7 +100,9 @@ def _collect_ui_compile_pairs(nuitka_config: dict[str, Any]) -> tuple[tuple[str,
             raise ValueError("[tool.wix-nuitka].ui_compile_pairs must be a list of tables")
         for index, raw_pair in enumerate(raw_pairs, start=1):
             if not isinstance(raw_pair, dict):
-                raise ValueError(f"ui_compile_pairs entry #{index} must be a table")
+                # ValueError, not TypeError: every [tool.wix-nuitka] validation failure is
+                # reported the same way so callers can catch a single exception type.
+                raise ValueError(f"ui_compile_pairs entry #{index} must be a table")  # noqa: TRY004
             ui_value = raw_pair.get("ui") or raw_pair.get("ui_file")
             py_value = raw_pair.get("py") or raw_pair.get("py_file")
             if not ui_value or not py_value:
@@ -349,7 +351,7 @@ def build_nuitka(
 
     nuitka_args.append(str(effective_entry_point))
     nuitka_cmd = [sys.executable, "-m", "nuitka", "--msvc=latest", *nuitka_args]
-    result = subprocess.run(nuitka_cmd, cwd=config.project_root)
+    result = subprocess.run(nuitka_cmd, cwd=config.project_root, check=False)
     if result.returncode != 0:
         print("[ERROR] Nuitka build failed.")
         sys.exit(result.returncode)
@@ -382,7 +384,7 @@ def build_cxfreeze(
     _ = copy_files
     _ = entry_point
     print("[INFO] Building with cx_Freeze...")
-    result = subprocess.run([sys.executable, "cxfreeze_setup.py", "bdist"], cwd=config.project_root)
+    result = subprocess.run([sys.executable, "cxfreeze_setup.py", "bdist"], cwd=config.project_root, check=False)
     if result.returncode != 0:
         print("[ERROR] cx_Freeze build failed.")
         sys.exit(result.returncode)
@@ -423,7 +425,7 @@ def create_installer(config: BuildConfig, include_source_dir: Path) -> None:
         "-d",
         f"RemoveExistingProducts={'yes' if config.remove_existing_products else 'no'}",
     ]
-    result = subprocess.run(wix_cmd, cwd=config.project_root)
+    result = subprocess.run(wix_cmd, cwd=config.project_root, check=False)
     if result.returncode != 0:
         print("[ERROR] WiX build failed.")
         sys.exit(result.returncode)
@@ -497,10 +499,10 @@ def main() -> None:
 
 __all__ = [
     "BuildConfig",
-    "load_build_config",
-    "build_nuitka",
     "build_cxfreeze",
+    "build_nuitka",
     "create_installer",
+    "load_build_config",
     "main",
 ]
 
