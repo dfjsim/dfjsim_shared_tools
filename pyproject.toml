@@ -4,7 +4,7 @@
 
 [project]
     name = "dfjsim_shared_tools"
-    version = "0.2.1"
+    version = "0.3.0"
     description = "Shared build and runtime helpers for dfjsim Python desktop applications."
     readme = "README.md"
     license = "GPL-3.0-or-later"

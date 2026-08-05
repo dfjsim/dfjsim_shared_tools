@@ -42,7 +42,7 @@ build = "dfjsim_shared_tools.build_nuitka_wix_installer:main"
 package = true
 
 [tool.uv.sources]
-dfjsim_shared_tools = { git = "https://github.com/dfjsim/dfjsim_shared_tools.git", tag = "v0.2.0" }
+dfjsim_shared_tools = { git = "https://github.com/dfjsim/dfjsim_shared_tools.git", tag = "v0.3.0" }
 ```
 
 Requires Python 3.14, matching the applications that consume it.
@@ -92,6 +92,47 @@ The shared installer builder reads configuration from the consuming project's `p
 - `ui_file` (optional single Qt `.ui` source)
 - `ui_py_file` (optional generated Python file for `ui_file`)
 - `ui_compile_pairs` (optional list of `{ ui = "...", py = "..." }` entries)
+
+## Update checks
+
+`dfjsim_shared_tools.auto_update` looks in a folder the application points it at — a shared drive,
+typically — for an installer newer than the running version, and offers to run it. There is no
+update server and nothing is sent anywhere: the protocol is a directory listing plus a filename
+comparison, so the folder must hold files named
+
+```
+<AppName>-<X.Y.Z>+build.<N>[-win64].msi        (or .exe)
+```
+
+which is exactly what this package's builder produces from `[project].version`. That version must
+therefore carry the `+build.<N>` tag at build time: it is what the running application reports and
+compares, and an untagged version is older than every tagged build of the same `X.Y.Z`.
+
+```python
+from dfjsim_shared_tools.auto_update import check_for_update, describe_installer_dir
+
+# At startup, before building the UI. Accepting an update launches the installer and exits.
+check_for_update(app_name, configured_folder, running_version, window=main_window)
+
+# Behind a "Check" button in a settings dialog.
+ok, message = describe_installer_dir(app_name, configured_folder, running_version)
+```
+
+- `check_for_update()` is the entry point an application should use. An unset folder means the
+  feature is off and nothing is touched; it always asks before installing, creating a withdrawn
+  tkinter parent when the caller has no window yet; and it never raises, so a disconnected share
+  cannot stop the application from starting. Never call it on a headless run — nobody is there to
+  answer the dialog.
+- `auto_update()` is the primitive underneath: it raises on a bad folder, and with `window=None`
+  it installs **without asking**.
+- `describe_installer_dir()` returns `(ok, message)` for a settings UI, so a mistyped path or a
+  disconnected share is reported while the user is looking at the field.
+- `newest_installer()` returns the highest-versioned installer in a folder, for callers that want
+  the raw answer.
+
+Where the folder path itself is stored is the application's business. A consumer whose own
+repository is public must keep an internal share path out of it entirely — a per-user setting
+rather than a committed config file.
 
 ## WiX prerequisites
 
