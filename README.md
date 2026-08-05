@@ -42,8 +42,22 @@ build = "dfjsim_shared_tools.build_nuitka_wix_installer:main"
 package = true
 
 [tool.uv.sources]
-dfjsim_shared_tools = { git = "https://github.com/dfjsim/dfjsim_shared_tools.git", tag = "v0.1.0" }
+dfjsim_shared_tools = { git = "https://github.com/dfjsim/dfjsim_shared_tools.git", tag = "v0.2.0" }
 ```
+
+Requires Python 3.14, matching the applications that consume it.
+
+### Qt is optional
+
+`pyside6` is an **extra**, not a hard dependency. Building an installer does not need Qt, and a
+consuming project that is not a Qt application would otherwise pull in several hundred MB of it and
+then have to tell Nuitka not to bundle it.
+
+Nothing here imports PySide6 at module level: `auto_update` imports `QMessageBox` inside the
+function that shows the popup, guarded, and falls back to tkinter, while `qt_auto_compiler` only
+shells out to the `pyside6-uic` executable. So the package imports and works without the extra.
+
+A Qt application that wants `qt_auto_compiler` should depend on `dfjsim_shared_tools[qt]`.
 
 ## Build configuration contract
 

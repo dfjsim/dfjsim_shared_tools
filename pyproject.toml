@@ -4,16 +4,28 @@
 
 [project]
     name = "dfjsim_shared_tools"
-    version = "0.1.1"
+    version = "0.2.0"
     description = "Shared build and runtime helpers for dfjsim Python desktop applications."
     readme = "README.md"
     license = "GPL-3.0-or-later"
-    requires-python = ">=3.13,<3.14"
+    requires-python = ">=3.14,<3.15"
     dependencies = [
         "packaging",
         "pydantic",
-        "pyside6",
     ]
+
+    [project.optional-dependencies]
+        # Qt is NOT required to build an installer, so it is not a hard dependency: a consuming
+        # project that is not a Qt application would otherwise pull in several hundred MB of Qt for
+        # a WiX/Nuitka build helper, and have to tell Nuitka not to bundle it.
+        #
+        # Nothing in this package imports PySide6 at module level. auto_update imports QMessageBox
+        # inside the function that shows the popup, guarded, and falls back to tkinter;
+        # qt_auto_compiler only shells out to the `pyside6-uic` executable. So the package imports
+        # and works without this extra installed.
+        qt = [
+            "pyside6",
+        ]
 
     [project.scripts]
         dfjsim-build = "dfjsim_shared_tools.build_nuitka_wix_installer:main"
