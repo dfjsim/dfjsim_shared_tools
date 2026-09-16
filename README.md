@@ -112,7 +112,9 @@ compares, and an untagged version is older than every tagged build of the same `
 from dfjsim_shared_tools.auto_update import check_for_update, describe_installer_dir
 
 # At startup, before building the UI. Accepting an update launches the installer and exits.
-check_for_update(app_name, configured_folder, running_version, window=main_window)
+outcome = check_for_update(app_name, configured_folder, running_version, window=main_window)
+if outcome.problem:                 # the share is not connected, or the check cannot compare
+    settings_form.note = outcome.note   # one line, next to the folder field — not a dialog
 
 # Behind a "Check" button in a settings dialog.
 ok, message = describe_installer_dir(app_name, configured_folder, running_version)
@@ -122,7 +124,13 @@ ok, message = describe_installer_dir(app_name, configured_folder, running_versio
   feature is off and nothing is touched; it always asks before installing, creating a withdrawn
   tkinter parent when the caller has no window yet; and it never raises, so a disconnected share
   cannot stop the application from starting. Never call it on a headless run — nobody is there to
-  answer the dialog.
+  answer the dialog. It returns an `UpdateCheck` — `status` (an `UpdateStatus`: `off`,
+  `unreachable`, `no_installer`, `uncomparable`, `up_to_date`, `declined`, `accepted`, `error`),
+  a one-line `note` for a status label, and the `installer` it found. `problem` is true for the
+  statuses that mean the check could not do its job (`unreachable`, `uncomparable`, `error`) —
+  the ones worth a quiet note on the settings form. A folder with no build in it yet is
+  `no_installer`, not a problem: it is the normal state right after the folder is set up, and
+  nagging about it at every start would teach people to ignore the note.
 - `auto_update()` is the primitive underneath: it raises on a bad folder, and with `window=None`
   it installs **without asking**.
 - `describe_installer_dir()` returns `(ok, message)` for a settings UI, so a mistyped path or a

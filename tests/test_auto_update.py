@@ -7,6 +7,7 @@ from dfjsim_shared_tools import auto_update as auto_update_module
 from dfjsim_shared_tools.auto_update import (
     ARCH_STR,
     INSTALLER_NAME_HINT,
+    UpdateStatus,
     _check_for_updated_installer,
     _get_installer_version,
     check_for_update,
@@ -136,9 +137,9 @@ def test_describe_installer_dir_refuses_to_compare_an_unparseable_running_versio
 
 def test_check_for_update_without_a_folder_touches_nothing(monkeypatch: pytest.MonkeyPatch) -> None:
     calls: list[tuple] = []
-    monkeypatch.setattr(auto_update_module, "auto_update", lambda *args, **kwargs: calls.append(args))
-    check_for_update("DemoApp", None, "2.8.0+build.20260703")
-    check_for_update("DemoApp", "   ", "2.8.0+build.20260703")
+    monkeypatch.setattr(auto_update_module, "newest_installer", lambda *args: calls.append(args))
+    assert check_for_update("DemoApp", None, "2.8.0+build.20260703").status is UpdateStatus.OFF
+    assert check_for_update("DemoApp", "   ", "2.8.0+build.20260703").status is UpdateStatus.OFF
     assert not calls
 
 
@@ -156,12 +157,72 @@ def test_check_for_update_asks_before_installing(tmp_path: Path, monkeypatch: py
     monkeypatch.setattr(auto_update_module, "_show_update_popup", accept)
     monkeypatch.setattr(auto_update_module, "_run_installer", launched.append)
 
-    check_for_update("DemoApp", folder, "2.8.0+build.20260703")
+    outcome = check_for_update("DemoApp", folder, "2.8.0+build.20260703")
 
     assert [type(window) for window in asked] == [_DummyRoot]
     assert launched == [folder / "DemoApp-2.9.0+build.20260801.msi"]
+    assert outcome.status is UpdateStatus.ACCEPTED
+    assert outcome.installer == launched[0]
+
+
+def test_check_for_update_says_when_the_offer_was_declined(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    folder = _installers(tmp_path, "DemoApp-2.9.0+build.20260801.msi")
+    monkeypatch.setattr(tkinter, "Tk", _DummyRoot)
+    monkeypatch.setattr(auto_update_module, "_show_update_popup", lambda window: False)
+    monkeypatch.setattr(auto_update_module, "_run_installer", lambda path: pytest.fail("declined, yet launched"))
+
+    outcome = check_for_update("DemoApp", folder, "2.8.0+build.20260703")
+
+    assert outcome.status is UpdateStatus.DECLINED
+    assert not outcome.problem
+    assert "DemoApp-2.9.0+build.20260801.msi" in outcome.note
 
 
 def test_check_for_update_survives_an_unreachable_folder(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(tkinter, "Tk", _DummyRoot)
-    check_for_update("DemoApp", tmp_path / "not-connected", "2.8.0+build.20260703")
+    outcome = check_for_update("DemoApp", tmp_path / "not-connected", "2.8.0+build.20260703")
+    assert outcome.status is UpdateStatus.UNREACHABLE
+    assert outcome.problem
+    assert str(tmp_path / "not-connected") in outcome.note
+
+
+def test_check_for_update_tells_an_empty_folder_from_an_unreachable_one(tmp_path: Path) -> None:
+    # The difference an application wants at startup: a share that is not connected is worth a
+    # note on the settings form; a folder with no build in it yet is not.
+    outcome = check_for_update("DemoApp", _installers(tmp_path, "notes.txt"), "2.8.0+build.20260703")
+    assert outcome.status is UpdateStatus.NO_INSTALLER
+    assert not outcome.problem
+    assert outcome.note  # there is still something to say, for a caller that wants to
+
+
+def test_check_for_update_reports_up_to_date_with_nothing_to_say(tmp_path: Path) -> None:
+    folder = _installers(tmp_path, "DemoApp-2.8.0+build.20260703.msi")
+    outcome = check_for_update("DemoApp", folder, "2.8.0+build.20260703")
+    assert outcome.status is UpdateStatus.UP_TO_DATE
+    assert outcome.note == ""
+    assert outcome.installer == folder / "DemoApp-2.8.0+build.20260703.msi"
+
+
+def test_check_for_update_flags_an_unparseable_running_version_as_a_problem(tmp_path: Path) -> None:
+    # A build that lost its version tag would never be offered anything; that is worth pointing out.
+    folder = _installers(tmp_path, "DemoApp-2.9.0+build.20260801.msi")
+    outcome = check_for_update("DemoApp", folder, "unknown")
+    assert outcome.status is UpdateStatus.UNCOMPARABLE
+    assert outcome.problem
+    assert "unknown" in outcome.note
+
+
+def test_check_for_update_never_raises(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    def explode(*args: object) -> None:
+        raise RuntimeError("listing blew up")
+
+    monkeypatch.setattr(auto_update_module, "newest_installer", explode)
+    outcome = check_for_update("DemoApp", tmp_path, "2.8.0+build.20260703")
+    assert outcome.status is UpdateStatus.ERROR
+    assert outcome.problem
+    assert "listing blew up" in outcome.note
+
+
+def test_status_compares_as_its_string(tmp_path: Path) -> None:
+    # A consumer may keep a plain string in its own code rather than import the enum.
+    assert check_for_update("DemoApp", None, "2.8.0+build.20260703").status == "off"

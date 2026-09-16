@@ -9,7 +9,10 @@ Two entry points, depending on how much the caller wants to own:
 * :func:`check_for_update` is the one an application normally wants. It always asks before
   installing, makes its own hidden tkinter parent window when the caller has none yet, treats an
   unset folder as "the feature is off", and never raises — an update check must not be able to
-  stop an application from starting.
+  stop an application from starting. It returns an :class:`UpdateCheck` saying what happened, so
+  an application can tell "the share is not connected" (worth a note on the settings form) from
+  "nothing there yet" (the normal state of a folder that was just set up) without either of them
+  becoming a dialog.
 * :func:`auto_update` is the primitive underneath it. It raises on a bad folder, and installs
   **without asking** when it is given no window, which is why it is not the recommended default.
 
@@ -23,6 +26,8 @@ import platform
 import re
 import subprocess
 import sys
+from dataclasses import dataclass
+from enum import StrEnum
 from pathlib import Path
 from typing import Any
 
@@ -47,12 +52,62 @@ _ARCH_HINT = f"[{ARCH_STR}]" if ARCH_STR else ""
 INSTALLER_NAME_HINT = f"<X.Y.Z>+build.<N>{_ARCH_HINT}.msi (or .exe)"
 
 
+class UpdateStatus(StrEnum):
+    """What an update check found. A ``StrEnum``, so ``status == "unreachable"`` also works."""
+
+    OFF = "off"
+    """No folder is configured: the feature is off and nothing was touched."""
+    UNREACHABLE = "unreachable"
+    """The folder could not be read — a share that is not connected, a mistyped path, no permission.
+    The one status worth showing at startup: while it lasts, no update will ever be offered."""
+    NO_INSTALLER = "no_installer"
+    """The folder was read and holds nothing named to the convention. Normal for a folder that was
+    just set up, so not a problem to nag about."""
+    UNCOMPARABLE = "uncomparable"
+    """The running version could not be parsed, so nothing can be newer than it. A build defect."""
+    UP_TO_DATE = "up_to_date"
+    AVAILABLE = "available"
+    """A newer installer is there. Only :func:`describe_installer_dir` reports this one: a check
+    that finds an update asks, and comes back as DECLINED or ACCEPTED."""
+    DECLINED = "declined"
+    """A newer installer was offered and the user said no."""
+    ACCEPTED = "accepted"
+    """The installer was launched. Launching ends the process, so a caller sees this status only
+    when it does not — under a test double, say."""
+    ERROR = "error"
+    """Anything else, already logged. The application carries on."""
+
+
+#: The statuses that mean the check could not do its job — the ones an application may want to
+#: point out on its settings form. Everything else is either "fine" or "the user already knows".
+PROBLEM_STATUSES = frozenset({UpdateStatus.UNREACHABLE, UpdateStatus.UNCOMPARABLE, UpdateStatus.ERROR})
+
+
+@dataclass(frozen=True)
+class UpdateCheck:
+    """What :func:`check_for_update` did, for a caller that wants to say so somewhere quiet."""
+
+    status: UpdateStatus
+    note: str = ""
+    """One line, meant for a status label rather than a dialog; empty when there is nothing to say
+    (OFF, UP_TO_DATE)."""
+    installer: Path | None = None
+    """The newest installer found, when one was."""
+
+    @property
+    def problem(self) -> bool:
+        """True when the check could not do its job (see :data:`PROBLEM_STATUSES`)."""
+        return self.status in PROBLEM_STATUSES
+
+
 def _show_update_popup(window: Any | None = None) -> bool:
     try:
         if window is not None and (
             hasattr(window, "metaObject") or "PySide6" in str(type(window)) or "PyQt" in str(type(window))
         ):
-            from PySide6.QtWidgets import QMessageBox
+            # Qt is an optional extra (see pyproject.toml), so it is normally absent from the
+            # environment the checker sees; the branch is only reached with a Qt window.
+            from PySide6.QtWidgets import QMessageBox  # pyright: ignore[reportMissingImports]
 
             reply = QMessageBox.question(
                 window,
@@ -192,6 +247,39 @@ def auto_update(script_name: str, installer_dir: Path | None, current_version: s
     _run_installer(new_installer)
 
 
+def _inspect(script_name: str, installer_dir: Path, current_version: str) -> tuple[UpdateStatus, Path | None, str]:
+    """What the folder holds for this version, before anyone is asked anything.
+
+    ``(status, installer, detail)`` — one of UNREACHABLE, NO_INSTALLER, UNCOMPARABLE, UP_TO_DATE
+    or AVAILABLE; the installer is the newest one found (set from UNCOMPARABLE on), and the detail
+    is the text of the problem for the two statuses that have one. Shared by the startup check and
+    the "check now" button, so the two cannot disagree about what a folder holds.
+    """
+    try:
+        latest_installer, latest_ver = newest_installer(script_name, installer_dir)
+    except FileNotFoundError:
+        return UpdateStatus.UNREACHABLE, None, "If it is a network share, it may need to be connected first."
+    except OSError as exc:
+        return UpdateStatus.UNREACHABLE, None, str(exc)
+
+    # Both are set together or not at all, but only checking both says so to a type checker.
+    if latest_installer is None or latest_ver is None:
+        return UpdateStatus.NO_INSTALLER, None, ""
+
+    try:
+        running_ver = version.parse(current_version)
+    except version.InvalidVersion:
+        return (
+            UpdateStatus.UNCOMPARABLE,
+            latest_installer,
+            f"this installation reports its own version as '{current_version}', which cannot be compared",
+        )
+
+    if latest_ver > running_ver:
+        return UpdateStatus.AVAILABLE, latest_installer, ""
+    return UpdateStatus.UP_TO_DATE, latest_installer, ""
+
+
 def describe_installer_dir(
     script_name: str, installer_dir: Path | str | None, current_version: str
 ) -> tuple[bool, str]:
@@ -208,41 +296,28 @@ def describe_installer_dir(
         )
 
     installer_dir = Path(str(installer_dir).strip())
-    try:
-        latest_installer, latest_ver = newest_installer(script_name, installer_dir)
-    except FileNotFoundError:
-        return False, (
-            f"Cannot read this folder:\n{installer_dir}\n\nIf it is a network share, it may need to be connected first."
-        )
-    except OSError as exc:
-        return False, f"Cannot read this folder:\n{installer_dir}\n\n{exc}"
-
-    # Both are set together or not at all, but only checking both says so to a type checker.
-    if latest_installer is None or latest_ver is None:
+    status, installer, detail = _inspect(script_name, installer_dir, current_version)
+    if status is UpdateStatus.UNREACHABLE:
+        return False, f"Cannot read this folder:\n{installer_dir}\n\n{detail}"
+    if status is UpdateStatus.NO_INSTALLER:
         return False, (
             f"No installer for {script_name} in:\n{installer_dir}\n\nFiles there must be named "
             f"{script_name}-{INSTALLER_NAME_HINT} — anything else is ignored."
         )
-
-    try:
-        running_ver = version.parse(current_version)
-    except version.InvalidVersion:
-        return False, (
-            f"Found {latest_installer.name}\n\nBut this installation reports its own version as "
-            f"'{current_version}', which cannot be compared, so no update will be offered."
-        )
-
-    if latest_ver > running_ver:
+    assert installer is not None  # every remaining status carries the installer it found
+    if status is UpdateStatus.UNCOMPARABLE:
+        return False, f"Found {installer.name}\n\nBut {detail}, so no update will be offered."
+    if status is UpdateStatus.AVAILABLE:
         return True, (
-            f"Found {latest_installer.name}\n\nThat is newer than this version ({current_version}); "
+            f"Found {installer.name}\n\nThat is newer than this version ({current_version}); "
             "it will be offered the next time this application starts."
         )
-    return True, f"Found {latest_installer.name}\n\nThis version ({current_version}) is up to date."
+    return True, f"Found {installer.name}\n\nThis version ({current_version}) is up to date."
 
 
 def check_for_update(
     script_name: str, installer_dir: Path | str | None, current_version: str, window: Any | None = None
-) -> None:
+) -> UpdateCheck:
     """Offer the newest installer in the folder, if there is one newer than this version.
 
     The entry point an application startup should call. Unlike :func:`auto_update` it:
@@ -255,23 +330,51 @@ def check_for_update(
     * never raises. A disconnected share, a folder of unrelated files, a version that cannot be
       parsed: all are logged and the application carries on starting.
 
+    It returns an :class:`UpdateCheck` saying what happened. The distinction an application most
+    likely wants is :attr:`UpdateCheck.problem` — the folder could not be read, or the check could
+    not compare — which is worth a quiet note on the settings form, against everything else, which
+    is not: a folder with nothing in it yet is the normal state right after it is set up, and a
+    declined update was declined by the person looking at the screen.
+
     Accepting an update launches the installer and exits the process, so call this before building
     the UI, and never on a headless/scripted run where nobody can answer the dialog.
     """
     if not installer_dir or not str(installer_dir).strip():
-        return
+        return UpdateCheck(UpdateStatus.OFF)
 
+    folder = Path(str(installer_dir).strip())
     root = None
     try:
+        status, installer, detail = _inspect(script_name, folder, current_version)
+        if status is UpdateStatus.UNREACHABLE:
+            logger.warning("Update check skipped: cannot read %s (%s)", folder, detail)
+            return UpdateCheck(status, f"Update folder cannot be read: {folder}")
+        if status is UpdateStatus.NO_INSTALLER:
+            logger.info("No installer for %s in %s.", script_name, folder)
+            return UpdateCheck(status, f"No installer for {script_name} in {folder}")
+        if status is UpdateStatus.UNCOMPARABLE:
+            logger.warning("Update check skipped: %s.", detail)
+            return UpdateCheck(status, f"No update can be offered: {detail}", installer)
+        if status is UpdateStatus.UP_TO_DATE:
+            logger.info("No updated MSI or EXE installer found.")
+            return UpdateCheck(status, "", installer)
+
+        assert installer is not None  # AVAILABLE always carries one
+        logger.info("Found updated installer: %s", installer)
         if window is None:
             import tkinter as tk
 
             root = tk.Tk()
             root.withdraw()
             window = root
-        auto_update(script_name, Path(str(installer_dir).strip()), current_version, window=window)
+        if not _show_update_popup(window):
+            logger.info("Skipping available update (%s) and running current version.", installer)
+            return UpdateCheck(UpdateStatus.DECLINED, f"{installer.name} is available and was not installed", installer)
+        _run_installer(installer)  # exits the process; the return below is for a caller that stubbed it
+        return UpdateCheck(UpdateStatus.ACCEPTED, f"Launched {installer.name}", installer)
     except Exception as exc:  # noqa: BLE001 - a failed update check must never stop the application
         logger.warning("Update check skipped: %s", exc)
+        return UpdateCheck(UpdateStatus.ERROR, f"Update check failed: {exc}")
     finally:
         if root is not None:
             with contextlib.suppress(Exception):
