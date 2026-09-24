@@ -2,7 +2,12 @@ from pathlib import Path
 
 import pytest
 
-from dfjsim_shared_tools.build_nuitka_wix_installer import _resolve_msi_version, load_build_config
+from dfjsim_shared_tools.build_nuitka_wix_installer import (
+    DEFAULT_NOFOLLOW_IMPORTS,
+    _nofollow_args,
+    _resolve_msi_version,
+    load_build_config,
+)
 
 
 def test_load_build_config_reads_expected_values(tmp_path: Path, monkeypatch) -> None:
@@ -105,3 +110,48 @@ version = "2.8.0.20260703"
     assert config.app_version == "2.8.0-beta.1+build.20260703"
     assert config.app_version_short == "2.8.0.20260703"
     assert config.msi_output.name.startswith("demo_app-2.8.0-beta.1+build.20260703")
+
+
+def _config_with_nuitka_section(tmp_path: Path, monkeypatch, nuitka_section: str):
+    (tmp_path / "pyproject.toml").write_text(
+        f"""
+[project]
+name = "demo_app"
+version = "1.2.3+build.4"
+authors = [{{ name = "Demo Author" }}]
+
+[tool.msi]
+upgrade_code = "12345678-1234-1234-1234-1234567890AB"
+
+[tool.wix-nuitka]
+entry_point = "main.py"
+{nuitka_section}
+""".strip(),
+        encoding="utf-8",
+    )
+    monkeypatch.chdir(tmp_path)
+    return load_build_config()
+
+
+def test_default_nofollow_patterns_keep_test_suites_out(tmp_path: Path, monkeypatch) -> None:
+    config = _config_with_nuitka_section(tmp_path, monkeypatch, "")
+    assert config.nuitka_default_nofollow_imports == DEFAULT_NOFOLLOW_IMPORTS
+    assert _nofollow_args(config) == ["--nofollow-import-to=*.tests,*.test.*,*_tests"]
+
+
+def test_project_patterns_are_added_to_the_defaults(tmp_path: Path, monkeypatch) -> None:
+    config = _config_with_nuitka_section(tmp_path, monkeypatch, 'nofollow_imports = ["numpy.f2py"]')
+    assert _nofollow_args(config) == ["--nofollow-import-to=*.tests,*.test.*,*_tests,numpy.f2py"]
+
+
+def test_default_nofollow_patterns_can_be_replaced(tmp_path: Path, monkeypatch) -> None:
+    # jinja2.tests is a real module of Jinja2: "*.tests" would leave it out of the build.
+    config = _config_with_nuitka_section(
+        tmp_path, monkeypatch, 'default_nofollow_imports = ["*.tests.*", "*.test.*", "*_tests"]'
+    )
+    assert _nofollow_args(config) == ["--nofollow-import-to=*.tests.*,*.test.*,*_tests"]
+
+
+def test_no_nofollow_argument_when_every_pattern_is_removed(tmp_path: Path, monkeypatch) -> None:
+    config = _config_with_nuitka_section(tmp_path, monkeypatch, "default_nofollow_imports = []")
+    assert _nofollow_args(config) == []

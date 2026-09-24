@@ -23,6 +23,12 @@ WIX_KNOWN_PATHS = [
 PACKAGE_DIR = Path(__file__).resolve().parent
 DEFAULT_WIX_DIR = PACKAGE_DIR / "wix"
 
+# Test suites are not followed into the build. A project whose dependencies hold a real module matching these
+# patterns (e.g. ``jinja2.tests``, imported by Jinja2 itself) replaces them with
+# ``[tool.wix-nuitka].default_nofollow_imports``: Nuitka applies ``--nofollow-import-to`` before any include option,
+# so nothing else can bring such a module back.
+DEFAULT_NOFOLLOW_IMPORTS = ("*.tests", "*.test.*", "*_tests")
+
 
 @dataclass(frozen=True)
 class BuildConfig:
@@ -43,6 +49,7 @@ class BuildConfig:
     nuitka_include_packages: tuple[str, ...]
     nuitka_include_package_data: tuple[str, ...]
     nuitka_include_modules: tuple[str, ...]
+    nuitka_default_nofollow_imports: tuple[str, ...]
     nuitka_nofollow_imports: tuple[str, ...]
     nuitka_exe_icon: str | None
     nuitka_onefile: bool
@@ -202,6 +209,11 @@ def load_build_config(project_root: Path | None = None) -> BuildConfig:
         nuitka_include_packages=_normalize_str_tuple(wix_nuitka_config.get("include_packages")),
         nuitka_include_package_data=_normalize_str_tuple(wix_nuitka_config.get("include_package_data")),
         nuitka_include_modules=_normalize_str_tuple(wix_nuitka_config.get("include_modules")),
+        nuitka_default_nofollow_imports=(
+            DEFAULT_NOFOLLOW_IMPORTS
+            if wix_nuitka_config.get("default_nofollow_imports") is None
+            else _normalize_str_tuple(wix_nuitka_config.get("default_nofollow_imports"))
+        ),
         nuitka_nofollow_imports=_normalize_str_tuple(wix_nuitka_config.get("nofollow_imports")),
         nuitka_exe_icon=(
             str(wix_nuitka_config.get("exe_icon")) if wix_nuitka_config.get("exe_icon") is not None else None
@@ -284,6 +296,12 @@ def _copy_extra_files(config: BuildConfig, destination_dir: Path, copy_files: tu
             shutil.copy2(source_path, dest_path)
 
 
+def _nofollow_args(config: BuildConfig) -> list[str]:
+    """The ``--nofollow-import-to`` argument: default patterns (test suites) plus the project's own."""
+    patterns = (*config.nuitka_default_nofollow_imports, *config.nuitka_nofollow_imports)
+    return [f"--nofollow-import-to={','.join(patterns)}"] if patterns else []
+
+
 def build_nuitka(
     config: BuildConfig,
     copy_files: tuple[str, ...] | None = None,
@@ -295,13 +313,6 @@ def build_nuitka(
     effective_copy_files = config.copy_files if copy_files is None else copy_files
     effective_entry_point_raw = entry_point or config.entry_point
     effective_entry_point = _resolve_project_path(config.project_root, effective_entry_point_raw)
-
-    nofollow_base = "*.tests,*.test.*,*_tests"
-    nofollow_args = (
-        f"--nofollow-import-to={nofollow_base},{','.join(config.nuitka_nofollow_imports)}"
-        if config.nuitka_nofollow_imports
-        else f"--nofollow-import-to={nofollow_base}"
-    )
 
     if config.nuitka_onefile:
         build_mode = "--onefile"
@@ -316,7 +327,7 @@ def build_nuitka(
 
     nuitka_args = [
         build_mode,
-        nofollow_args,
+        *_nofollow_args(config),
         f"--output-filename={config.app_name}.exe",
         *nuitka_args_extra,
     ]

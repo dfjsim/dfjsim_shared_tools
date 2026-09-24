@@ -85,7 +85,12 @@ The shared installer builder reads configuration from the consuming project's `p
 - `include_packages`
 - `include_package_data`
 - `include_modules`
-- `nofollow_imports`
+- `nofollow_imports` (added to the default patterns below)
+- `default_nofollow_imports` (optional; replaces the default `["*.tests", "*.test.*", "*_tests"]`, which keep test
+  suites out of the build. Set it when a dependency holds a real module matching them, e.g. Jinja2's
+  `jinja2.tests`: `default_nofollow_imports = ["*.tests.*", "*.test.*", "*_tests"]`. Nuitka applies
+  `--nofollow-import-to` before any include option, so `include_modules` cannot bring such a module back.
+  An empty list turns the defaults off.)
 - `exe_icon`
 - `onefile`
 - `windows_console_mode`
