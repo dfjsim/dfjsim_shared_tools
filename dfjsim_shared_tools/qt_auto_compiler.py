@@ -1,4 +1,4 @@
-# SPDX-License-Identifier: GPL-3.0-or-later
+# SPDX-License-Identifier: MIT
 """Utility to auto-compile Qt .ui files to .py files when needed."""
 
 import subprocess

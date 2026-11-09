@@ -42,7 +42,7 @@ build = "dfjsim_shared_tools.build_nuitka_wix_installer:main"
 package = true
 
 [tool.uv.sources]
-dfjsim_shared_tools = { git = "https://github.com/dfjsim/dfjsim_shared_tools.git", tag = "v0.3.0" }
+dfjsim_shared_tools = { git = "https://github.com/dfjsim/dfjsim_shared_tools.git", tag = "v0.6.0" }
 ```
 
 Requires Python 3.14, matching the applications that consume it.
@@ -158,3 +158,15 @@ The repository includes a helper script for installing the WiX Toolset packages 
 - Run build commands from the consuming application's repository root.
 - The shared builder intentionally reads `pyproject.toml` from the current working directory rather than from this package directory.
 - Consumer repos should pin to a released Git tag instead of tracking a floating branch.
+
+## Licence
+
+MIT, from 0.6.0 (see [LICENSE](LICENSE)); releases up to 0.5.0 were published under GPL-3.0-or-later.
+`auto_update` is compiled into the applications that use it, so it must not impose copyleft on them.
+
+One file is not covered by the MIT licence: `dfjsim_shared_tools/wix/MyWixUI_InstallDir.wxs` is derived from
+the WiX Toolset's `WixUI_InstallDir` dialog set (© .NET Foundation and contributors) and stays under the
+Microsoft Reciprocal License, whose text is beside it in
+[`dfjsim_shared_tools/wix/LICENSE-MS-RL.txt`](dfjsim_shared_tools/wix/LICENSE-MS-RL.txt). An MSI built with
+the WiX Toolset also carries WiX's own UI and Util extension code under that licence, so an application that
+distributes its MSI should list it among its third-party notices.

@@ -1,13 +1,17 @@
 [build-system]
-    requires      = ["setuptools>=61"]
+    # 77 is the first setuptools that reads an SPDX expression in `license` and `license-files` (PEP 639).
+    requires      = ["setuptools>=77"]
     build-backend = "setuptools.build_meta"
 
 [project]
     name = "dfjsim_shared_tools"
-    version = "0.5.0"
+    version = "0.6.0"
     description = "Shared build and runtime helpers for dfjsim Python desktop applications."
     readme = "README.md"
-    license = "GPL-3.0-or-later"
+    # MIT from 0.6.0 (GPL-3.0-or-later before). MS-RL covers one file only: wix/MyWixUI_InstallDir.wxs, derived
+    # from the WiX Toolset's own dialog set, whose licence travels beside it.
+    license = "MIT AND MS-RL"
+    license-files = ["LICENSE", "dfjsim_shared_tools/wix/LICENSE-MS-RL.txt"]
     requires-python = ">=3.14,<3.15"
     dependencies = [
         "packaging",
@@ -43,7 +47,7 @@
     include = ["dfjsim_shared_tools*"]
 
 [tool.setuptools.package-data]
-    dfjsim_shared_tools = ["wix/*.wxs"]
+    dfjsim_shared_tools = ["wix/*.wxs", "wix/LICENSE-MS-RL.txt"]
 
 [tool.pytest.ini_options]
     testpaths = ["tests"]
