@@ -7,6 +7,7 @@ import re
 import shutil
 import subprocess
 import sys
+import sysconfig
 import tomllib
 from dataclasses import dataclass
 from pathlib import Path
@@ -67,6 +68,23 @@ def _arch_suffix() -> str:
     if platform.architecture()[0] == "64bit":
         return "-win64"
     return ""
+
+
+# WiX's -arch per interpreter platform (sysconfig.get_platform()).
+WIX_ARCH_BY_PLATFORM = {"win-amd64": "x64", "win-arm64": "arm64", "win32": "x86"}
+
+
+def _wix_arch(platform_tag: str | None = None) -> str:
+    """The package architecture: the build interpreter's, which is the frozen executable's.
+
+    Without ``-arch`` WiX builds an x86 package, whatever the executable: its components are 32-bit, so on a 64-bit
+    Windows their HKLM keys land under ``WOW6432Node`` and ``ProgramFiles6432Folder`` means ``Program Files (x86)``.
+    """
+    tag = platform_tag if platform_tag is not None else sysconfig.get_platform()
+    try:
+        return WIX_ARCH_BY_PLATFORM[tag]
+    except KeyError:
+        raise ValueError(f"No WiX architecture for the interpreter platform {tag!r}") from None
 
 
 def _normalize_str_tuple(value: Any) -> tuple[str, ...]:
@@ -411,6 +429,8 @@ def create_installer(config: BuildConfig, include_source_dir: Path) -> None:
         "build",
         "-acceptEula",
         WIX_EULA_ID,
+        "-arch",
+        _wix_arch(),
         str(config.wix_setup_template),
         str(config.wix_ui_template),
         "-ext",

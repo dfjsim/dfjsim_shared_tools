@@ -1,11 +1,15 @@
+import subprocess
 from pathlib import Path
 
 import pytest
 
+from dfjsim_shared_tools import build_nuitka_wix_installer
 from dfjsim_shared_tools.build_nuitka_wix_installer import (
     DEFAULT_NOFOLLOW_IMPORTS,
     _nofollow_args,
     _resolve_msi_version,
+    _wix_arch,
+    create_installer,
     load_build_config,
 )
 
@@ -155,3 +159,32 @@ def test_default_nofollow_patterns_can_be_replaced(tmp_path: Path, monkeypatch) 
 def test_no_nofollow_argument_when_every_pattern_is_removed(tmp_path: Path, monkeypatch) -> None:
     config = _config_with_nuitka_section(tmp_path, monkeypatch, "default_nofollow_imports = []")
     assert _nofollow_args(config) == []
+
+
+@pytest.mark.parametrize(
+    ("platform_tag", "arch"),
+    [("win-amd64", "x64"), ("win-arm64", "arm64"), ("win32", "x86")],
+)
+def test_wix_arch_follows_the_interpreter_platform(platform_tag: str, arch: str) -> None:
+    assert _wix_arch(platform_tag) == arch
+
+
+def test_wix_arch_refuses_an_unknown_platform() -> None:
+    with pytest.raises(ValueError, match="linux-x86_64"):
+        _wix_arch("linux-x86_64")
+
+
+def test_installer_built_for_the_interpreter_architecture(tmp_path: Path, monkeypatch) -> None:
+    # Without -arch, WiX makes an x86 package even for a 64-bit executable.
+    config = _config_with_nuitka_section(tmp_path, monkeypatch, "")
+    commands: list[list[str]] = []
+    monkeypatch.setattr(build_nuitka_wix_installer, "_find_wix_executable", lambda: "wix.exe")
+    monkeypatch.setattr(build_nuitka_wix_installer.sysconfig, "get_platform", lambda: "win-amd64")
+    monkeypatch.setattr(
+        build_nuitka_wix_installer.subprocess,
+        "run",
+        lambda command, **_kwargs: commands.append(command) or subprocess.CompletedProcess(command, 0),
+    )
+    create_installer(config, tmp_path / "main.dist")
+    (command,) = commands
+    assert command[command.index("-arch") + 1] == "x64"

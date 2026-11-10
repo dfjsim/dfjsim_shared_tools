@@ -42,7 +42,7 @@ build = "dfjsim_shared_tools.build_nuitka_wix_installer:main"
 package = true
 
 [tool.uv.sources]
-dfjsim_shared_tools = { git = "https://github.com/dfjsim/dfjsim_shared_tools.git", tag = "v0.6.0" }
+dfjsim_shared_tools = { git = "https://github.com/dfjsim/dfjsim_shared_tools.git", tag = "v0.7.0" }
 ```
 
 Requires Python 3.14, matching the applications that consume it.
@@ -76,6 +76,10 @@ The shared installer builder reads configuration from the consuming project's `p
 - `installer_only`
 - `setup_wxs` (optional app-specific override)
 - `ui_wxs` (optional app-specific override)
+
+From 0.7.0 the package has the build interpreter's architecture (WiX `-arch`: `x64` from a 64-bit Python, which is
+what Nuitka freezes). Before, WiX's default made every package x86, so a 64-bit application's HKLM keys went under
+`WOW6432Node`. An x86 package already installed is upgraded by the x64 one as usual (same `upgrade_code`).
 
 ### `[tool.wix-nuitka]`
 
